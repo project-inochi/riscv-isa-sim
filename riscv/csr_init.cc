@@ -284,6 +284,10 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
   add_hypervisor_csr(CSR_HTVAL, htval = std::make_shared<basic_csr_t>(proc, CSR_HTVAL, 0));
   add_hypervisor_csr(CSR_HTINST, htinst = std::make_shared<basic_csr_t>(proc, CSR_HTINST, 0));
   add_hypervisor_csr(CSR_HGATP, hgatp = std::make_shared<hgatp_csr_t>(proc, CSR_HGATP));
+  if (proc->extension_enabled(EXT_SHDLT)) {
+    add_hypervisor_csr(CSR_HDLTCTL, hdltctl = std::make_shared<hdltctl_csr_t>(proc, CSR_HDLTCTL));
+    add_hypervisor_csr(CSR_HDLTIDX, hdltidx = std::make_shared<hdltidx_csr_t>(proc, CSR_HDLTIDX));
+  }
   nonvirtual_sstatus = std::make_shared<sstatus_proxy_csr_t>(proc, CSR_SSTATUS, mstatus);
   add_hypervisor_csr(CSR_VSSTATUS, vsstatus = std::make_shared<vsstatus_csr_t>(proc, CSR_VSSTATUS));
   add_supervisor_csr(CSR_SSTATUS, sstatus = std::make_shared<sstatus_csr_t>(proc, nonvirtual_sstatus, vsstatus));

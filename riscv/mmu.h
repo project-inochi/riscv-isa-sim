@@ -457,6 +457,21 @@ private:
   bool svukte_fault(reg_t addr, mem_access_info_t access_info);
   reg_t translate(mem_access_info_t access_info, reg_t len);
 
+  template<typename T> inline void implicit_store(reg_t paddr, T value, reg_t addr, bool virt, access_type trap_type)
+  {
+    const size_t len = sizeof(T);
+    if (!pmp_ok(paddr, len, STORE, PRV_S, false))
+      throw_access_exception(virt, addr, trap_type);
+
+    target_endian<T> target_value = to_target(value);
+    if (void* host_addr = sim->addr_to_mem(paddr)) {
+      memcpy(host_addr, &target_value, len);
+    } else if (!mmio_ok(paddr, len, STORE) ||
+               !sim->mmio_mmu_store(paddr, len, (uint8_t*)&target_value)) {
+      throw_access_exception(virt, addr, trap_type);
+    }
+  }
+
   reg_t pte_load(reg_t pte_paddr, reg_t addr, bool virt, access_type trap_type, size_t ptesize) {
     if (ptesize == 4)
       return pte_load<uint32_t>(pte_paddr, addr, virt, trap_type);
@@ -496,18 +511,7 @@ private:
 
   template<typename T> inline void pte_store(reg_t pte_paddr, reg_t new_pte, reg_t addr, bool virt, access_type trap_type)
   {
-    const size_t ptesize = sizeof(T);
-
-    if (!pmp_ok(pte_paddr, ptesize, STORE, PRV_S, false))
-      throw_access_exception(virt, addr, trap_type);
-
-    void* host_pte_addr = sim->addr_to_mem(pte_paddr);
-    target_endian<T> target_pte = to_target((T)new_pte);
-    if (host_pte_addr) {
-      memcpy(host_pte_addr, &target_pte, ptesize);
-    } else if (!mmio_store(pte_paddr, ptesize, (uint8_t*)&target_pte)) {
-      throw_access_exception(virt, addr, trap_type);
-    }
+    implicit_store<T>(pte_paddr, (T)new_pte, addr, virt, trap_type);
 
     pte_cache_insert(pte_paddr, new_pte);
   }

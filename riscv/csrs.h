@@ -655,6 +655,23 @@ class hypervisor_csr_t: public basic_csr_t {
   virtual void verify_permissions(insn_t insn, bool write) const override;
 };
 
+class hdltctl_csr_t final: public hypervisor_csr_t {
+ public:
+  hdltctl_csr_t(processor_t* const proc, const reg_t addr);
+ protected:
+  virtual bool unlogged_write(const reg_t val) noexcept override;
+};
+typedef std::shared_ptr<hdltctl_csr_t> hdltctl_csr_t_p;
+
+class hdltidx_csr_t final: public hypervisor_csr_t {
+ public:
+  hdltidx_csr_t(processor_t* const proc, const reg_t addr);
+  void hardware_increment() noexcept;
+ protected:
+  virtual bool unlogged_write(const reg_t val) noexcept override;
+};
+typedef std::shared_ptr<hdltidx_csr_t> hdltidx_csr_t_p;
+
 class hideleg_csr_t: public masked_csr_t {
  public:
   hideleg_csr_t(processor_t* const proc, const reg_t addr, csr_t_p mideleg);

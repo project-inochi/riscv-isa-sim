@@ -157,6 +157,7 @@ static const extension_info_t extension_infos[] = {
   {"smpmpmt", {EXT_SMPMPMT}},
   {"smrnmi", {EXT_SMRNMI}},
   {"sscofpmf", {EXT_SSCOFPMF}},
+  {"shdlt", {EXT_SHDLT}},
   {"svadu", {EXT_SVADU}},
   {"svade", {EXT_SVADE}},
   {"svnapot", {EXT_SVNAPOT}},
@@ -451,6 +452,12 @@ isa_parser_t::isa_parser_t(const char* str, const char *priv)
 
   if (extension_table['H'] && !supervisor)
     bad_isa_string(str, "'H' extension requires S mode");
+
+  if (extension_table[EXT_SHDLT] && !extension_table['H'])
+    bad_isa_string(str, "'Shdlt' extension requires 'H'");
+
+  if (extension_table[EXT_SHDLT] && !extension_table[EXT_SVADU])
+    bad_isa_string(str, "'Shdlt' extension requires 'Svadu'");
 
   max_isa = max_xlen == 32 ? reg_t(1) << 30 : reg_t(2) << 62;
   for (unsigned char ch = 'A'; ch <= 'Z'; ch++) {

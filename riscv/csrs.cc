@@ -1151,6 +1151,7 @@ bool medeleg_csr_t::unlogged_write(const reg_t val) noexcept {
     | (1 << CAUSE_SUPERVISOR_ECALL)
     | (proc->has_mmu() ? mmu_exceptions : 0)
     | (proc->extension_enabled('H') ? hypervisor_exceptions : 0)
+    | (proc->extension_enabled(EXT_SHDLT) ? (reg_t(1) << CAUSE_DIRTY_LOG_BUFFER_FAULT) : 0)
     | ((proc->extension_enabled(EXT_ZICFISS) || proc->extension_enabled(EXT_ZICFILP))?
         (1 << CAUSE_SOFTWARE_CHECK_FAULT) : 0)
     | (proc->extension_enabled(EXT_ZICNTR)?
@@ -1457,6 +1458,43 @@ void hypervisor_csr_t::verify_permissions(insn_t insn, bool write) const {
   basic_csr_t::verify_permissions(insn, write);
   if (!proc->extension_enabled('H'))
     throw trap_illegal_instruction(insn.bits());
+}
+
+hdltctl_csr_t::hdltctl_csr_t(processor_t* const proc, const reg_t addr):
+  hypervisor_csr_t(proc, addr) {
+}
+
+bool hdltctl_csr_t::unlogged_write(const reg_t val) noexcept {
+  constexpr reg_t en_mask = 1;
+  constexpr reg_t size_mask = reg_t(0xf) << 1;
+  constexpr unsigned ppn_offset = 10;
+
+  reg_t size = get_field(val, size_mask);
+  if (size > 9)
+    size = 9;
+
+  const unsigned address_bits = std::min(proc->paddr_bits(), proc->get_xlen());
+  const unsigned ppn_bits = address_bits > PGSHIFT ? address_bits - PGSHIFT : 0;
+  const reg_t ppn_mask = ppn_bits >= sizeof(reg_t) * 8
+    ? reg_t(-1)
+    : (ppn_bits == 0 ? 0 : (reg_t(1) << ppn_bits) - 1);
+  reg_t ppn = (val >> ppn_offset) & ppn_mask;
+  ppn &= ~((reg_t(1) << size) - 1);
+
+  const reg_t adjusted = (val & en_mask) | (size << 1) | (ppn << ppn_offset);
+  return hypervisor_csr_t::unlogged_write(adjusted);
+}
+
+hdltidx_csr_t::hdltidx_csr_t(processor_t* const proc, const reg_t addr):
+  hypervisor_csr_t(proc, addr) {
+}
+
+bool hdltidx_csr_t::unlogged_write(const reg_t val) noexcept {
+  return hypervisor_csr_t::unlogged_write(val & ((reg_t(1) << 20) - 1));
+}
+
+void hdltidx_csr_t::hardware_increment() noexcept {
+  unlogged_write(read() + 1);
 }
 
 hideleg_csr_t::hideleg_csr_t(processor_t* const proc, const reg_t addr, csr_t_p mideleg):

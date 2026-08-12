@@ -646,8 +646,38 @@ reg_t mmu_t::s2xlate(reg_t gva, reg_t gpa, access_type type, access_type trap_ty
 
         if ((pte & ad) != ad) {
           if (hade) {
-            // set accessed and possibly dirty bits
-            pte_store(pte_paddr, pte | ad, gva, virt, trap_type, vm.ptesize);
+            if (proc->extension_enabled(EXT_SHDLT) &&
+                (proc->state.hdltctl->read() & 1) &&
+                type == STORE && !(pte & PTE_D)) {
+              const reg_t ctl = proc->state.hdltctl->read();
+              const reg_t size = (ctl >> 1) & 0xf;
+              const reg_t index = proc->state.hdltidx->read();
+              const unsigned entry_bytes = proc->get_const_xlen() / 8;
+              const unsigned entry_shift = proc->get_const_xlen() == 64 ? 3 : 2;
+              const reg_t capacity = reg_t(1) << (size + PGSHIFT - entry_shift);
+
+              if (index >= capacity)
+                throw trap_dirty_log_buffer_fault(gva, gpa >> 2, tinst);
+
+              const reg_t buffer_ppn = ctl >> 10;
+              const reg_t buffer_addr = (buffer_ppn << PGSHIFT) + index * entry_bytes;
+              const reg_t entry_mask = proc->get_const_xlen() == 64
+                ? ((reg_t(1) << 56) - 1)
+                : ((reg_t(1) << 32) - 1);
+              const reg_t entry = (gpa & ~reg_t(PGSIZE - 1)) & entry_mask;
+
+              if (entry_bytes == 8)
+                implicit_store<uint64_t>(buffer_addr, entry, gva, virt, trap_type);
+              else
+                implicit_store<uint32_t>(buffer_addr, entry, gva, virt, trap_type);
+
+              // The entry is intentionally left behind if the following PTE write fails.
+              pte_store(pte_paddr, pte | ad, gva, virt, trap_type, vm.ptesize);
+              proc->state.hdltidx->hardware_increment();
+            } else {
+              // set accessed and possibly dirty bits
+              pte_store(pte_paddr, pte | ad, gva, virt, trap_type, vm.ptesize);
+            }
           } else {
             // take exception if access or possibly dirty bit is not set.
             break;
@@ -796,13 +826,13 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
     } else {
       reg_t ad = PTE_A | ((type == STORE) * PTE_D);
 
+      bool update_pte = false;
       if ((pte & ad) != ad) {
         if (hade) {
           // Check for write permission to the first-stage PT in second-stage
           // PTE and set the D bit in the second-stage PTE if needed
           s2xlate(addr, base + idx * vm.ptesize, STORE, type, virt, false, true);
-          // set accessed and possibly dirty bits.
-          pte_store(pte_paddr, pte | ad, addr, virt, type, vm.ptesize);
+          update_pte = true;
         } else {
           // take exception if access or possibly dirty bit is not set.
           break;
@@ -816,7 +846,15 @@ reg_t mmu_t::walk(mem_access_info_t access_info)
                         | (vpn & ((reg_t(1) << napot_bits) - 1))
                         | (vpn & ((reg_t(1) << ptshift) - 1))) << PGSHIFT;
       reg_t phys = page_base | (addr & page_mask);
-      return s2xlate(addr, phys, type, type, virt, hlvx, false) & ~page_mask;
+      reg_t result = s2xlate(addr, phys, type, type, virt, hlvx, false);
+
+      // Complete the final second-stage translation before committing the
+      // first-stage A/D update.  Hardware can walk both stages concurrently,
+      // and exposes the final G-stage update before the VS-stage PTE update.
+      if (update_pte)
+        pte_store(pte_paddr, pte | ad, addr, virt, type, vm.ptesize);
+
+      return result & ~page_mask;
     }
   }
 

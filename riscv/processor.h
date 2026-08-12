@@ -139,6 +139,8 @@ struct state_t
   csr_t_p htval;
   csr_t_p htinst;
   csr_t_p hgatp;
+  hdltctl_csr_t_p hdltctl;
+  hdltidx_csr_t_p hdltidx;
   hvip_csr_t_p hvip;
   sstatus_csr_t_p sstatus;
   vsstatus_csr_t_p vsstatus;
